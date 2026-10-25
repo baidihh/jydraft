@@ -16,7 +16,7 @@ from pathlib import Path
 import re
 import time
 
-from . import auto, draft, media
+from . import auto, media
 
 SCHEMA = 'jy14-evidence/v1'
 MICROS = 1_000_000
@@ -85,7 +85,10 @@ def sample_shot_indexes(count, limit):
 
 def analyze(input_dir, work, frames=4, frame_width=480, audio_sample=120.0, with_audio=True):
     scanned = auto.scan(input_dir)
-    work = draft.fresh_directory(work)
+    work = Path(work).expanduser().resolve()
+    if work.exists():
+        raise ValueError('输出目录已存在: ' + str(work))
+    work.mkdir(parents=True, mode=0o700)
     frames = max(1, min(int(frames), 24))
     frame_width = max(120, min(int(frame_width), 1920))
     sample_us = int(max(0.0, audio_sample) * MICROS)
