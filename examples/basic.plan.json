@@ -1,0 +1,55 @@
+{
+  "schema": "jy14-headless-plan/v1",
+  "name": "我的第一个自动草稿",
+  "canvas": {
+    "width": 1920,
+    "height": 1080,
+    "fps": 30
+  },
+  "tracks": [
+    {
+      "type": "video",
+      "name": "主视频",
+      "segments": [
+        {
+          "source": "/absolute/path/to/source.mp4",
+          "start_us": 0,
+          "duration_us": 2000000,
+          "source_start_us": 0,
+          "source_duration_us": 2000000,
+          "speed": 1.0,
+          "volume": 1.0
+        }
+      ]
+    },
+    {
+      "type": "text",
+      "name": "字幕",
+      "segments": [
+        {
+          "text": "这是一条可编辑字幕",
+          "start_us": 0,
+          "duration_us": 2000000,
+          "size": 6,
+          "x": 0,
+          "y": -0.78,
+          "color": "#FFFFFF",
+          "border_color": "#000000",
+          "border_width": 0.05
+        }
+      ]
+    },
+    {
+      "type": "audio",
+      "name": "BGM",
+      "segments": [
+        {
+          "source": "/absolute/path/to/music.wav",
+          "start_us": 0,
+          "duration_us": 2000000,
+          "volume": 0.12
+        }
+      ]
+    }
+  ]
+}

@@ -1,0 +1,41 @@
+{
+  "schema": "jy14-headless-plan/v1",
+  "name": "圆形蒙版示例",
+  "canvas": {
+    "width": 1920,
+    "height": 1080,
+    "fps": 30
+  },
+  "tracks": [
+    {
+      "type": "video",
+      "name": "主视频",
+      "segments": [
+        {
+          "source": "/absolute/path/to/source.mp4",
+          "start_us": 0,
+          "duration_us": 3000000,
+          "mask": {
+            "shape": "circle",
+            "width": 0.35,
+            "height": 0.35,
+            "feather": 0.08
+          }
+        }
+      ]
+    },
+    {
+      "type": "text",
+      "name": "字幕",
+      "segments": [
+        {
+          "text": "圆形蒙版示例",
+          "start_us": 0,
+          "duration_us": 3000000,
+          "size": 8,
+          "y": -0.78
+        }
+      ]
+    }
+  ]
+}

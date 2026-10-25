@@ -1,0 +1,12 @@
+__pycache__/
+*.pyc
+.work/
+reference/
+bin/
+dist/
+build/
+node_modules/
+.venv/
+.DS_Store
+*.zip
+artifacts/
