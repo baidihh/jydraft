@@ -72,6 +72,34 @@ def text_fields(material):
     }
 
 
+def degradations(timeline):
+    """列出 FFmpeg 执行器无法还原、需要原生引擎才能完整呈现的能力。"""
+    segments = [segment for track in timeline.get('tracks', [])
+                for segment in track.get('segments', [])]
+
+    def count(check):
+        return sum(1 for segment in segments if check(segment))
+
+    found = []
+    masks = count(lambda segment: segment.get('enable_video_mask') or 'mask' in segment)
+    keyframes = count(lambda segment: segment.get('common_keyframes'))
+    transitions = count(lambda segment: segment.get('transition'))
+    rotation = count(lambda segment: abs(float(
+        segment.get('clip', {}).get('rotation', 0) or 0)) > 1e-9)
+    opacity = count(lambda segment: float(
+        segment.get('clip', {}).get('alpha', 1) or 1) < 0.999)
+    for feature, total, note in [
+        ('mask', masks, '原生蒙版未参与 FFmpeg 导出'),
+        ('keyframes', keyframes, '关键帧未参与 FFmpeg 导出，使用片段首帧的静态值'),
+        ('transition', transitions, '原生转场未参与 FFmpeg 导出'),
+        ('rotation', rotation, '旋转未参与 FFmpeg 导出'),
+        ('opacity', opacity, '透明度未参与 FFmpeg 导出'),
+    ]:
+        if total:
+            found.append({'feature': feature, 'segments': total, 'note': note})
+    return found
+
+
 def build_graph(timeline, build_folder, work, font=None):
     canvas = timeline['canvas_config']
     width, height = int(canvas['width']), int(canvas['height'])
@@ -170,13 +198,8 @@ def build_graph(timeline, build_folder, work, font=None):
             current = '[%s]' % label
             text_count += 1
 
-    if timeline.get('tracks') and any(segment.get('common_keyframes') for track in timeline['tracks']
-                                      for segment in track.get('segments', [])):
-        warnings.append('关键帧未参与 FFmpeg 导出，使用片段首帧的静态值')
-    if any('mask' in segment for track in timeline.get('tracks', [])
-           for segment in track.get('segments', [])):
-        warnings.append('原生蒙版未参与 FFmpeg 导出')
-
+    degraded = degradations(timeline)
+    warnings.extend(item['note'] for item in degraded)
     audio_label = None
     if audio_parts:
         filters.append('anullsrc=r=48000:cl=stereo:d=%s[asilence]' % seconds(total))
@@ -185,7 +208,7 @@ def build_graph(timeline, build_folder, work, font=None):
                        'atrim=duration=%s[aout]' % (len(audio_parts) + 1, seconds(total)))
         audio_label = '[aout]'
     filters.append('%strim=duration=%s,setpts=PTS-STARTPTS,format=yuv420p,setrange=range=limited[vout]' % (current, seconds(total)))
-    return inputs, ';'.join(filters), audio_label, warnings
+    return inputs, ';'.join(filters), audio_label, warnings, degraded
 
 
 def probe_output(ffprobe, output, timeline, expect_audio, timeout):
@@ -236,7 +259,7 @@ def export(build_dir, out, ffmpeg=None, ffprobe=None, font=None, crf=18, preset=
         material.get('has_audio')
         for material in timeline.get('materials', {}).get('videos', []))
     work = out
-    inputs, graph, audio_label, warnings = build_graph(timeline, build_dir / 'draft', work, font)
+    inputs, graph, audio_label, warnings, degraded = build_graph(timeline, build_dir / 'draft', work, font)
     (work / 'filter_complex.txt').write_text(graph, encoding='utf-8')
     command = []
     for item in inputs:
@@ -271,6 +294,7 @@ def export(build_dir, out, ffmpeg=None, ffprobe=None, font=None, crf=18, preset=
         'ffmpeg': {'path': str(ffmpeg), 'version': tool_version(ffmpeg)},
         'ffprobe': {'path': str(ffprobe), 'version': tool_version(ffprobe)},
         'warnings': warnings,
+        'degraded': degraded,
         'stats': stats,
         'draft_name': record['name'],
     }

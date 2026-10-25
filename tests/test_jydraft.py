@@ -8,7 +8,7 @@ import unittest
 import uuid
 from pathlib import Path
 
-from jydraft import auto, codec, draft, export, media, resources, runtime
+from jydraft import analyze, auto, codec, draft, export, media, resources, runtime
 
 ROOT = Path(__file__).resolve().parent.parent
 WORK = ROOT / '.work' / 'tests'
@@ -101,6 +101,45 @@ class BuildExportTest(unittest.TestCase):
         self.assertEqual(report['stats']['video_codec'], 'h264')
         self.assertEqual(report['stats']['frames'], 60)
         self.assertTrue(Path(report['output']).is_file())
+
+
+def has_ffmpeg():
+    try:
+        media.ffmpeg()
+        return True
+    except Exception:
+        return False
+
+
+@unittest.skipUnless(has_ffmpeg(), '需要 ffmpeg')
+class AnalyzeTest(unittest.TestCase):
+    def test_evidence_pack(self):
+        WORK.mkdir(parents=True, exist_ok=True)
+        base = Path(tempfile.mkdtemp(prefix='analyze-', dir=WORK))
+        try:
+            media.sample(base / 'clip.mp4', 2)
+            result = analyze.analyze(base, base / 'work', frames=2, audio_sample=2)
+            self.assertEqual(result['status'], 'analyzed')
+            self.assertEqual(result['summary']['videos'], 1)
+            self.assertGreaterEqual(result['summary']['frames'], 1)
+            evidence = json.loads(Path(result['evidence']).read_text(encoding='utf-8'))
+            self.assertEqual(evidence['schema'], 'jy14-evidence/v1')
+            video = evidence['videos'][0]
+            self.assertGreaterEqual(len(video['shots']), 1)
+            self.assertTrue(Path(video['shots'][0]['frame']).is_file())
+            self.assertIn('mean_volume_db', video.get('audio', {}))
+        finally:
+            shutil.rmtree(base, ignore_errors=True)
+
+
+class DegradeTest(unittest.TestCase):
+    def test_report_lists_unsupported_features(self):
+        timeline = {'tracks': [{'type': 'video', 'segments': [
+            {'enable_video_mask': True, 'common_keyframes': [{}],
+             'clip': {'rotation': 12, 'alpha': 0.5}},
+        ]}]}
+        found = {item['feature']: item['segments'] for item in export.degradations(timeline)}
+        self.assertEqual(found, {'mask': 1, 'keyframes': 1, 'rotation': 1, 'opacity': 1})
 
 
 class AutoTest(unittest.TestCase):

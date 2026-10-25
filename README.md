@@ -18,6 +18,27 @@ jydraft auto --input /素材目录 --brief "20秒快节奏竖屏，配乐，带�
 
 ---
 
+## 工作方式：AI 出计划，两个执行器干活
+
+```text
+素材目录
+  └─ analyze ──→ evidence.json + 代表帧 + 字幕 + 音量
+                    │
+                    ├─ Agent 读证据，产出 jy14-headless-plan/v1
+                    │
+                    ├─ build / publish ──→ 剪映可编辑草稿（人可微调）
+                    └─ export ───────────→ FFmpeg MP4（快速预览/成片）
+```
+
+- `analyze` 只描述素材事实：镜头切点、代表帧、音量、SRT 分句，不做创作判断。
+- `plan` 是唯一的执行契约；任何模型或脚本只要产出合法 JSON，就能被执行。
+- `build` 和 `export` 是**两个独立执行器**：同一个计划既能落到剪映草稿，也能直接出 MP4。
+- FFmpeg 执行器不重实现剪映的全部效果；遇到蒙版、关键帧、旋转、透明度、转场时，
+  `export` 报告的 `degraded` 字段会明确列出降级项，不会静默丢弃。
+- 需要像素级还原这些效果时，再走剪映原生导出（目前仅 11.4.2 / 11.5.0 有匹配配置）。
+
+---
+
 ## 1. 安装
 
 ### 方式 A：下载发布包（推荐）
@@ -96,14 +117,26 @@ jydraft schema
 # 1) 环境
 jydraft doctor
 
-# 2) 看素材
-jydraft scan --input /素材目录
+# 2) 理解素材：镜头、代表帧、音量、字幕
+jydraft analyze --input /素材目录 --work /tmp/job-analysis
 
-# 3) 只生成计划，不写草稿，人工/Agent 检查
-jydraft auto --input /素材目录 --brief "15秒快节奏，配乐，带字幕" \
-  --work /tmp/preview --dry-run
+# 3) Agent 读 /tmp/job-analysis/evidence.json 和 frames/*.jpg，
+#    产出 /tmp/job-analysis/plan.json（格式见 jydraft schema）
 
-# 4) 正式生成 + 登记首页 + 导出
+# 4) 先看计划，不落草稿
+jydraft build --plan /tmp/job-analysis/plan.json --out /tmp/job-build
+jydraft verify-build --build /tmp/job-build
+
+# 5) 快速出片检查剪辑节奏（degraded 会列出 FFmpeg 没还原的效果）
+jydraft export --build /tmp/job-build --out /tmp/job-preview
+
+# 6) 满意后登记到剪映首页，人工微调
+jydraft publish --build /tmp/job-build --audit /tmp/job-publish
+```
+
+没有 Agent 或不想自己写计划时，用规则兜底：
+
+```bash
 jydraft auto --input /素材目录 --brief "15秒快节奏，配乐，带字幕" \
   --work /tmp/job --name 成片01 --publish --export
 ```
@@ -136,8 +169,9 @@ jydraft auto --input /素材目录 --brief "15秒快节奏，配乐，带字幕"
 | 命令 | 作用 |
 | --- | --- |
 | `doctor` | 检查剪映、草稿目录、ffmpeg、加解密 |
+| `analyze --input DIR --work DIR` | 输出 AI 可读证据包：镜头、代表帧、音量、字幕 |
 | `scan --input DIR` | 扫描素材和镜头切点 |
-| `auto --input DIR --brief TEXT --work DIR` | 一句话自动粗剪 |
+| `auto --input DIR --brief TEXT --work DIR` | 一句话自动粗剪（规则兜底） |
 | `build --plan FILE\|- --out DIR` | 按计划生成离线 build |
 | `publish --build DIR --audit DIR` | 登记到剪映首页 |
 | `create --plan FILE\|- --work DIR` | build + publish |
@@ -173,16 +207,18 @@ jydraft auto --input /素材目录 --brief "15秒快节奏，配乐，带字幕"
 | 修改已有草稿 | 支持 `edit-text` / `edit-timeline` |
 | 读取剪映加密草稿 | 支持 |
 | FFmpeg 无头导出 MP4 | 支持 |
+| 素材证据包（镜头/抽帧/音量/字幕） | 支持 `analyze` |
 | 自动语音识别字幕 | 未实现；需要先提供 `.srt` |
 | 转场 / 滤镜 / 特效 / 花字 | 未实现（缺少本机已采集资源） |
 | 剪映原生引擎无头导出 | 11.6 无可用 ABI；上游也只支持 11.5/11.4.2 |
-| FFmpeg 导出蒙版/关键帧 | 不渲染，报告里会写 warning |
+| FFmpeg 导出蒙版/关键帧/旋转/透明度/转场 | 不渲染，`degraded` 字段会逐项列出 |
 
-`auto` 是**规则驱动粗剪**，不是语义级 AI 创作。更复杂的要求可以：
+`auto` 是**规则驱动粗剪**，不是语义级 AI 创作。需要创作意图时：
 
-1. 先让 Agent 跑 `scan`；
-2. Agent 根据素材时长、镜头切点、文件名挑选片段；
-3. 生成自己的 plan，用 `build` / `create` 执行。
+1. 先跑 `analyze` 拿到 `evidence.json` 和代表帧；
+2. Agent 读帧、字幕、音量，决定用哪些镜头、怎么排；
+3. 产出 `jy14-headless-plan/v1`，用 `build` / `create` 执行；
+4. 先用 `export` 低价预览，再 `publish` 进剪映微调。
 
 ---
 

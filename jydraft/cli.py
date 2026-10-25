@@ -8,7 +8,7 @@ import subprocess
 import sys
 
 from . import __version__
-from . import auto as auto_module, codec, draft, export as export_module, media, platform_support, runtime
+from . import auto as auto_module, analyze as analyze_module, codec, draft, export as export_module, media, platform_support, runtime
 
 PROJECT = Path(__file__).resolve().parent.parent
 
@@ -215,6 +215,13 @@ def scan_cmd(args):
     return 0
 
 
+def analyze_cmd(args):
+    print_json(analyze_module.report(analyze_module.analyze(
+        args.input, args.work, frames=args.frames, frame_width=args.frame_width,
+        audio_sample=args.audio_sample, with_audio=not args.no_audio)))
+    return 0
+
+
 def auto_cmd(args):
     print_json(auto_module.auto(args.input, args.brief, args.work, name=args.name,
                                 title=args.title, publish=args.publish, do_export=args.export,
@@ -241,6 +248,10 @@ def capabilities(args):
         },
         'commands': {
             'doctor': {'usage': 'jydraft doctor [--build-helper]', 'returns': '环境检查'},
+            'analyze': {
+                'usage': 'jydraft analyze --input DIR --work NEW_DIR [--frames N] [--frame-width N] [--no-audio]',
+                'returns': 'evidence.json：镜头、代表帧、音量、字幕',
+            },
             'scan': {'usage': 'jydraft scan --input DIR', 'returns': '视频/图片/音频/字幕与镜头切点'},
             'auto': {
                 'usage': 'jydraft auto --input DIR --brief TEXT --work NEW_DIR [--name NAME] [--publish] [--export] [--dry-run]',
@@ -264,11 +275,43 @@ def capabilities(args):
             'app': {'usage': 'jydraft app', 'returns': '可选的本地网页界面'},
         },
         'plan_schema': 'jy14-headless-plan/v1',
+        'evidence_schema': 'jy14-evidence/v1',
+        'executors': {
+            'draft': {
+                'command': 'jydraft build / publish',
+                'output': '剪映可编辑草稿',
+                'supports': ['video', 'audio', 'text', 'speed', 'volume', 'pip', 'keyframes',
+                             'mask', 'opacity', 'rotation'],
+            },
+            'ffmpeg': {
+                'command': 'jydraft export',
+                'output': 'MP4',
+                'supports': ['video', 'audio', 'text', 'speed', 'volume', 'pip'],
+                'degraded': {
+                    'mask': '原生蒙版不参与导出',
+                    'keyframes': '使用片段首帧静态值',
+                    'rotation': '不参与导出',
+                    'opacity': '不参与导出',
+                    'transition': '不参与导出',
+                },
+            },
+            'native': {
+                'status': 'optional',
+                'note': '剪映原生导出需要 11.4.2 / 11.5.0 的匹配配置；11.6 暂无无界面导出 ABI。',
+            },
+        },
+        'agent_flow': [
+            'jydraft analyze --input DIR --work W',
+            '读取 W/evidence.json 与代表帧，产出 jy14-headless-plan/v1',
+            'jydraft build --plan PLAN.json --out W/build',
+            'jydraft export --build W/build --out W/export',
+        ],
         'exit_codes': {'0': '成功', '1': 'doctor 检查失败', '2': '参数/运行错误'},
         'notes': [
             '所有命令把结果 JSON 输出到 stdout，错误输出到 stderr。',
             'publish / edit-* 前必须完全退出剪映。',
-            'auto 是规则驱动粗剪；更复杂的创作意图可由 Agent 读取 scan 结果后自行生成 plan。',
+            'auto 是规则驱动的兜底粗剪；需要创作意图时，让 Agent 读 analyze 证据包后自己生成 plan。',
+            'export 报告的 degraded 字段列出 FFmpeg 无法还原、需要剪映原生引擎的能力。',
         ],
     })
     return 0
@@ -435,6 +478,15 @@ def main(argv=None):
     p.add_argument('--preset', default='medium')
     p.add_argument('--timeout', type=int, default=900)
     p.set_defaults(func=export_cmd)
+
+    p = sub.add_parser('analyze', help='把素材变成 AI 可读的证据包（镜头、抽帧、音量、字幕）')
+    p.add_argument('--input', required=True, help='素材文件夹')
+    p.add_argument('--work', required=True, help='新的输出目录')
+    p.add_argument('--frames', type=int, default=4, help='每个视频最多抽取几个镜头代表帧')
+    p.add_argument('--frame-width', type=int, default=480, help='代表帧宽度')
+    p.add_argument('--audio-sample', type=float, default=120.0, help='音量统计抽样秒数，0 表示不抽样')
+    p.add_argument('--no-audio', action='store_true', help='跳过音量统计')
+    p.set_defaults(func=analyze_cmd)
 
     p = sub.add_parser('scan', help='扫描素材目录，输出可用素材与镜头切点')
     p.add_argument('--input', required=True)
